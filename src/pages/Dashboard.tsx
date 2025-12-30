@@ -3,6 +3,7 @@ import { StatCard } from "@/components/dashboard/StatCard";
 import { RecentCases } from "@/components/dashboard/RecentCases";
 import { UpcomingHearings } from "@/components/dashboard/UpcomingHearings";
 import { TasksOverview } from "@/components/dashboard/TasksOverview";
+import { AlertsPanel } from "@/components/dashboard/AlertsPanel";
 import { FolderOpen, Calendar, FileText, CheckSquare } from "lucide-react";
 
 export default function Dashboard() {
@@ -49,7 +50,8 @@ export default function Dashboard() {
           <RecentCases />
           <TasksOverview />
         </div>
-        <div>
+        <div className="space-y-6">
+          <AlertsPanel />
           <UpcomingHearings />
         </div>
       </div>
