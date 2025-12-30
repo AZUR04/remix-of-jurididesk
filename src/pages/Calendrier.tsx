@@ -2,27 +2,34 @@ import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { EventFilters } from "@/components/calendrier/EventFilters";
+import { NotificationSettings } from "@/components/calendrier/NotificationSettings";
+import { CreateEventDialog } from "@/components/calendrier/CreateEventDialog";
 import { 
   ChevronLeft, 
-  ChevronRight, 
-  Plus,
+  ChevronRight,
   Clock,
   MapPin,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  User,
+  Bell
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const daysOfWeek = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
-const events = [
-  { id: 1, day: 10, title: "Audience TGI", time: "09:00", type: "audience" },
-  { id: 2, day: 12, title: "Réunion client", time: "14:00", type: "meeting" },
-  { id: 3, day: 15, title: "Audience Commerce", time: "10:30", type: "audience" },
-  { id: 4, day: 18, title: "Dépôt conclusions", time: "11:00", type: "deadline" },
-  { id: 5, day: 22, title: "Audience Tribunal Paix", time: "09:00", type: "audience" },
+const allEvents = [
+  { id: 1, day: 10, title: "Audience TGI", time: "09:00", type: "audience", lawyer: "kabongo", client: "abc" },
+  { id: 2, day: 12, title: "Réunion client Mwamba", time: "14:00", type: "meeting", lawyer: "lunda", client: "mwamba" },
+  { id: 3, day: 15, title: "Audience Commerce", time: "10:30", type: "audience", lawyer: "mukendi", client: "congo" },
+  { id: 4, day: 18, title: "Dépôt conclusions", time: "11:00", type: "deadline", lawyer: "kabongo", client: "abc" },
+  { id: 5, day: 22, title: "Audience Tribunal Paix", time: "09:00", type: "audience", lawyer: "lunda", client: "katanga" },
+  { id: 6, day: 10, title: "Réunion préparatoire", time: "08:00", type: "meeting", lawyer: "kabongo", client: "abc" },
+  { id: 7, day: 25, title: "Délai appel", time: "23:59", type: "deadline", lawyer: "mukendi", client: "congo" },
+  { id: 8, day: 28, title: "Audience Cour d'Appel", time: "10:00", type: "audience", lawyer: "kabongo", client: "katanga" },
 ];
 
-const upcomingEvents = [
+const upcomingEventsData = [
   {
     id: 1,
     title: "Société Minière ABC c/ État",
@@ -30,6 +37,9 @@ const upcomingEvents = [
     time: "09:00 - 12:00",
     location: "Tribunal de Grande Instance, Kinshasa",
     type: "audience",
+    lawyer: "kabongo",
+    client: "abc",
+    hasReminder: true,
   },
   {
     id: 2,
@@ -38,6 +48,9 @@ const upcomingEvents = [
     time: "14:00 - 15:30",
     location: "Cabinet - Salle A",
     type: "meeting",
+    lawyer: "lunda",
+    client: "mwamba",
+    hasReminder: true,
   },
   {
     id: 3,
@@ -46,6 +59,20 @@ const upcomingEvents = [
     time: "10:30 - 13:00",
     location: "Tribunal de Commerce, Lubumbashi",
     type: "audience",
+    lawyer: "mukendi",
+    client: "katanga",
+    hasReminder: false,
+  },
+  {
+    id: 4,
+    title: "Dépôt conclusions - Congo Trading",
+    date: "18 Jan 2025",
+    time: "11:00",
+    location: "Greffe du Tribunal",
+    type: "deadline",
+    lawyer: "kabongo",
+    client: "congo",
+    hasReminder: true,
   },
 ];
 
@@ -61,16 +88,41 @@ const typeLabels = {
   deadline: "Échéance",
 };
 
+const lawyerNames: Record<string, string> = {
+  kabongo: "Me. Kabongo",
+  lunda: "Me. Lunda",
+  mukendi: "Me. Mukendi",
+};
+
 export default function Calendrier() {
   const [currentDate] = useState(new Date(2025, 0, 1));
+  const [selectedLawyer, setSelectedLawyer] = useState("all");
+  const [selectedClient, setSelectedClient] = useState("all");
+  const [selectedType, setSelectedType] = useState("all");
+
   const currentMonth = currentDate.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+
+  // Filter events
+  const filteredEvents = allEvents.filter((event) => {
+    const matchesLawyer = selectedLawyer === "all" || event.lawyer === selectedLawyer;
+    const matchesClient = selectedClient === "all" || event.client === selectedClient;
+    const matchesType = selectedType === "all" || event.type === selectedType;
+    return matchesLawyer && matchesClient && matchesType;
+  });
+
+  const filteredUpcoming = upcomingEventsData.filter((event) => {
+    const matchesLawyer = selectedLawyer === "all" || event.lawyer === selectedLawyer;
+    const matchesClient = selectedClient === "all" || event.client === selectedClient;
+    const matchesType = selectedType === "all" || event.type === selectedType;
+    return matchesLawyer && matchesClient && matchesType;
+  });
 
   // Generate calendar days
   const firstDayOfMonth = new Date(2025, 0, 1).getDay();
   const daysInMonth = 31;
   const startingDay = firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1;
   
-  const calendarDays = [];
+  const calendarDays: (number | null)[] = [];
   for (let i = 0; i < startingDay; i++) {
     calendarDays.push(null);
   }
@@ -81,8 +133,18 @@ export default function Calendrier() {
   return (
     <AppLayout 
       title="Calendrier" 
-      subtitle="Gérez vos audiences et rendez-vous"
+      subtitle="Gérez vos audiences, réunions et échéances"
     >
+      {/* Filters */}
+      <EventFilters
+        selectedLawyer={selectedLawyer}
+        setSelectedLawyer={setSelectedLawyer}
+        selectedClient={selectedClient}
+        setSelectedClient={setSelectedClient}
+        selectedType={selectedType}
+        setSelectedType={setSelectedType}
+      />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Calendar */}
         <div className="lg:col-span-2 rounded-xl border bg-card p-6 opacity-0 animate-fade-in">
@@ -97,10 +159,8 @@ export default function Calendrier() {
               <Button variant="outline" size="icon-sm">
                 <ChevronRight className="w-4 h-4" />
               </Button>
-              <Button variant="gold" size="sm" className="ml-2 gap-2">
-                <Plus className="w-4 h-4" />
-                Événement
-              </Button>
+              <NotificationSettings />
+              <CreateEventDialog />
             </div>
           </div>
 
@@ -115,7 +175,7 @@ export default function Calendrier() {
 
             {/* Calendar days */}
             {calendarDays.map((day, index) => {
-              const dayEvents = events.filter((e) => e.day === day);
+              const dayEvents = filteredEvents.filter((e) => e.day === day);
               const isToday = day === 10;
 
               return (
@@ -159,46 +219,81 @@ export default function Calendrier() {
               );
             })}
           </div>
+
+          {/* Legend */}
+          <div className="flex items-center gap-4 mt-6 pt-4 border-t">
+            <span className="text-sm text-muted-foreground">Légende:</span>
+            <div className="flex items-center gap-2">
+              <span className={cn("w-3 h-3 rounded", "bg-primary")} />
+              <span className="text-sm">Audience</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={cn("w-3 h-3 rounded", "bg-accent")} />
+              <span className="text-sm">Réunion</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={cn("w-3 h-3 rounded", "bg-destructive")} />
+              <span className="text-sm">Échéance</span>
+            </div>
+          </div>
         </div>
 
         {/* Upcoming Events Sidebar */}
         <div className="rounded-xl border bg-card opacity-0 animate-fade-in" style={{ animationDelay: "100ms" }}>
           <div className="p-6 border-b border-border">
             <h3 className="font-display text-lg font-semibold">Prochains événements</h3>
-            <p className="text-sm text-muted-foreground">Cette semaine</p>
+            <p className="text-sm text-muted-foreground">
+              {filteredUpcoming.length} événement{filteredUpcoming.length > 1 ? "s" : ""} à venir
+            </p>
           </div>
 
-          <div className="p-4 space-y-4">
-            {upcomingEvents.map((event) => (
-              <div
-                key={event.id}
-                className="p-4 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <Badge 
-                    variant="outline" 
-                    className={cn("text-xs", typeStyles[event.type as keyof typeof typeStyles])}
-                  >
-                    {typeLabels[event.type as keyof typeof typeLabels]}
-                  </Badge>
+          <div className="p-4 space-y-4 max-h-[600px] overflow-y-auto">
+            {filteredUpcoming.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                Aucun événement correspondant aux filtres
+              </p>
+            ) : (
+              filteredUpcoming.map((event) => (
+                <div
+                  key={event.id}
+                  className="p-4 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <Badge 
+                      variant="outline" 
+                      className={cn("text-xs", typeStyles[event.type as keyof typeof typeStyles])}
+                    >
+                      {typeLabels[event.type as keyof typeof typeLabels]}
+                    </Badge>
+                    {event.hasReminder && (
+                      <div className="flex items-center text-xs text-muted-foreground">
+                        <Bell className="w-3 h-3 mr-1" />
+                        Rappel actif
+                      </div>
+                    )}
+                  </div>
+                  <h4 className="font-medium text-foreground mb-2">{event.title}</h4>
+                  <div className="space-y-1 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-2">
+                      <CalendarIcon className="w-4 h-4" />
+                      {event.date}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      {event.time}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4" />
+                      <span className="line-clamp-1">{event.location}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <User className="w-4 h-4" />
+                      {lawyerNames[event.lawyer]}
+                    </div>
+                  </div>
                 </div>
-                <h4 className="font-medium text-foreground mb-2">{event.title}</h4>
-                <div className="space-y-1 text-sm text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <CalendarIcon className="w-4 h-4" />
-                    {event.date}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4" />
-                    {event.time}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    <span className="line-clamp-1">{event.location}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>
