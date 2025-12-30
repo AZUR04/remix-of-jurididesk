@@ -13,7 +13,6 @@ import Taches from "./pages/Taches";
 import Reporting from "./pages/Reporting";
 import Parametres from "./pages/Parametres";
 import Abonnement from "./pages/Abonnement";
-import Install from "./pages/Install";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -35,7 +34,6 @@ const App = () => (
             <Route path="/reporting" element={<Reporting />} />
             <Route path="/parametres" element={<Parametres />} />
             <Route path="/abonnement" element={<Abonnement />} />
-            <Route path="/install" element={<Install />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
