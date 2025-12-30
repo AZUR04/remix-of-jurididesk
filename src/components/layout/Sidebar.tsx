@@ -8,6 +8,7 @@ import {
   MessageSquare, 
   CheckSquare,
   BarChart3,
+  CreditCard,
   Scale,
   ChevronLeft,
   ChevronRight,
@@ -25,6 +26,7 @@ const navItems = [
   { icon: MessageSquare, label: "Messages", path: "/messages" },
   { icon: CheckSquare, label: "Tâches", path: "/taches" },
   { icon: BarChart3, label: "Reporting", path: "/reporting" },
+  { icon: CreditCard, label: "Abonnement", path: "/abonnement" },
 ];
 
 export function Sidebar() {
