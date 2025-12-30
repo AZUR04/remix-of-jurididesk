@@ -10,9 +10,12 @@ import {
   FolderOpen,
   MoreHorizontal,
   Calendar,
-  User
+  User,
+  Tag
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CreateCaseDialog } from "@/components/dossiers/CreateCaseDialog";
+import { CaseDetailPanel } from "@/components/dossiers/CaseDetailPanel";
 
 const cases = [
   {
@@ -24,6 +27,7 @@ const cases = [
     createdAt: "05 Jan 2024",
     nextHearing: "15 Jan 2025",
     lawyer: "Me. Kabongo",
+    tags: ["confidentiel", "minier"],
   },
   {
     id: "DOS-2024-002",
@@ -34,6 +38,7 @@ const cases = [
     createdAt: "12 Dec 2023",
     nextHearing: "22 Jan 2025",
     lawyer: "Me. Kabongo",
+    tags: ["succession"],
   },
   {
     id: "DOS-2024-003",
@@ -44,6 +49,7 @@ const cases = [
     createdAt: "20 Nov 2023",
     nextHearing: "10 Jan 2025",
     lawyer: "Me. Kabongo",
+    tags: ["urgent", "foncier"],
   },
   {
     id: "DOS-2024-004",
@@ -54,6 +60,7 @@ const cases = [
     createdAt: "08 Oct 2023",
     nextHearing: "-",
     lawyer: "Me. Lunda",
+    tags: ["travail"],
   },
   {
     id: "DOS-2024-005",
@@ -64,6 +71,7 @@ const cases = [
     createdAt: "15 Jan 2024",
     nextHearing: "28 Jan 2025",
     lawyer: "Me. Kabongo",
+    tags: ["pénal", "défense"],
   },
 ];
 
@@ -79,6 +87,19 @@ const filterOptions = ["Tous", "En cours", "Urgent", "En attente", "Terminé"];
 export default function Dossiers() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("Tous");
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [selectedCase, setSelectedCase] = useState<typeof cases[0] | null>(null);
+
+  const filteredCases = cases.filter((c) => {
+    const matchesSearch = c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          c.client.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          c.id.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesFilter = activeFilter === "Tous" || 
+                          statusConfig[c.status as keyof typeof statusConfig]?.label === activeFilter;
+    
+    return matchesSearch && matchesFilter;
+  });
 
   return (
     <AppLayout 
@@ -101,7 +122,7 @@ export default function Dossiers() {
             <Filter className="w-4 h-4" />
             Filtres
           </Button>
-          <Button variant="gold" className="gap-2">
+          <Button variant="gold" className="gap-2" onClick={() => setCreateDialogOpen(true)}>
             <Plus className="w-4 h-4" />
             Nouveau dossier
           </Button>
@@ -125,11 +146,12 @@ export default function Dossiers() {
 
       {/* Cases Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {cases.map((caseItem, index) => {
+        {filteredCases.map((caseItem, index) => {
           const status = statusConfig[caseItem.status as keyof typeof statusConfig];
           return (
             <div
               key={caseItem.id}
+              onClick={() => setSelectedCase(caseItem)}
               className="rounded-xl border bg-card p-5 hover:shadow-lg transition-all duration-300 cursor-pointer group opacity-0 animate-fade-in"
               style={{ animationDelay: `${index * 50}ms` }}
             >
@@ -154,7 +176,21 @@ export default function Dossiers() {
                 {caseItem.title}
               </h3>
 
-              <p className="text-sm text-muted-foreground mb-4">{caseItem.client}</p>
+              <p className="text-sm text-muted-foreground mb-3">{caseItem.client}</p>
+
+              {/* Tags */}
+              <div className="flex flex-wrap gap-1 mb-3">
+                {caseItem.tags.slice(0, 2).map((tag) => (
+                  <span key={tag} className="px-2 py-0.5 text-xs rounded-full bg-muted text-muted-foreground">
+                    {tag}
+                  </span>
+                ))}
+                {caseItem.tags.length > 2 && (
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-muted text-muted-foreground">
+                    +{caseItem.tags.length - 2}
+                  </span>
+                )}
+              </div>
 
               <div className="flex items-center justify-between text-xs text-muted-foreground pt-3 border-t border-border">
                 <div className="flex items-center gap-1">
@@ -170,6 +206,20 @@ export default function Dossiers() {
           );
         })}
       </div>
+
+      {/* Create Dialog */}
+      <CreateCaseDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} />
+
+      {/* Detail Panel */}
+      {selectedCase && (
+        <>
+          <div 
+            className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40"
+            onClick={() => setSelectedCase(null)}
+          />
+          <CaseDetailPanel caseData={selectedCase} onClose={() => setSelectedCase(null)} />
+        </>
+      )}
     </AppLayout>
   );
 }
