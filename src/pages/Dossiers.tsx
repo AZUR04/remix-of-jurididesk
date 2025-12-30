@@ -11,11 +11,15 @@ import {
   MoreHorizontal,
   Calendar,
   User,
-  Tag
+  Tag,
+  AlertTriangle,
+  Crown
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CreateCaseDialog } from "@/components/dossiers/CreateCaseDialog";
 import { CaseDetailPanel } from "@/components/dossiers/CaseDetailPanel";
+import { LimitReachedModal } from "@/components/subscription/LimitReachedModal";
+import { useSubscription } from "@/contexts/SubscriptionContext";
 
 const cases = [
   {
@@ -89,6 +93,9 @@ export default function Dossiers() {
   const [activeFilter, setActiveFilter] = useState("Tous");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedCase, setSelectedCase] = useState<typeof cases[0] | null>(null);
+  const [limitModalOpen, setLimitModalOpen] = useState(false);
+  
+  const { canCreateDossier, currentUsage, limits, status, isDossierLimitReached } = useSubscription();
 
   const filteredCases = cases.filter((c) => {
     const matchesSearch = c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -101,11 +108,46 @@ export default function Dossiers() {
     return matchesSearch && matchesFilter;
   });
 
+  const handleNewDossierClick = () => {
+    // STRICT: Vérifier la limite AVANT d'ouvrir le dialog
+    if (!canCreateDossier()) {
+      setLimitModalOpen(true);
+      return;
+    }
+    setCreateDialogOpen(true);
+  };
+
   return (
     <AppLayout 
       title="Dossiers" 
       subtitle={`${cases.length} dossiers au total`}
     >
+      {/* Limite Alerte FREE */}
+      {status === "FREE" && isDossierLimitReached && (
+        <div className="mb-6 p-4 rounded-xl border bg-destructive/5 border-destructive/20 flex items-center gap-3 animate-fade-in">
+          <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center">
+            <AlertTriangle className="w-5 h-5 text-destructive" />
+          </div>
+          <div className="flex-1">
+            <p className="font-medium text-destructive">
+              Limite de dossiers atteinte
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Vous utilisez {currentUsage.dossiers}/{limits.maxDossiers} dossier(s) - Passez à PREMIUM pour créer plus de dossiers
+            </p>
+          </div>
+          <Button 
+            variant="gold" 
+            size="sm"
+            onClick={() => setLimitModalOpen(true)}
+            className="gap-2"
+          >
+            <Crown className="w-4 h-4" />
+            Upgrade
+          </Button>
+        </div>
+      )}
+
       {/* Actions Bar */}
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <div className="relative flex-1">
@@ -122,9 +164,18 @@ export default function Dossiers() {
             <Filter className="w-4 h-4" />
             Filtres
           </Button>
-          <Button variant="gold" className="gap-2" onClick={() => setCreateDialogOpen(true)}>
+          <Button 
+            variant="gold" 
+            className="gap-2" 
+            onClick={handleNewDossierClick}
+          >
             <Plus className="w-4 h-4" />
             Nouveau dossier
+            {status === "FREE" && (
+              <Badge variant="outline" className="ml-1 text-xs bg-background/50">
+                {currentUsage.dossiers}/{limits.maxDossiers}
+              </Badge>
+            )}
           </Button>
         </div>
       </div>
@@ -220,6 +271,13 @@ export default function Dossiers() {
           <CaseDetailPanel caseData={selectedCase} onClose={() => setSelectedCase(null)} />
         </>
       )}
+
+      {/* Limit Reached Modal - STRICT: pas de contournement */}
+      <LimitReachedModal
+        open={limitModalOpen}
+        onOpenChange={setLimitModalOpen}
+        resource="dossiers"
+      />
     </AppLayout>
   );
 }
