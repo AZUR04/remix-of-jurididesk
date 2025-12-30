@@ -10,6 +10,7 @@ import Documents from "./pages/Documents";
 import Messages from "./pages/Messages";
 import Taches from "./pages/Taches";
 import Reporting from "./pages/Reporting";
+import Parametres from "./pages/Parametres";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
           <Route path="/messages" element={<Messages />} />
           <Route path="/taches" element={<Taches />} />
           <Route path="/reporting" element={<Reporting />} />
+          <Route path="/parametres" element={<Parametres />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

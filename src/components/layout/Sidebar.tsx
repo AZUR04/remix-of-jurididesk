@@ -75,14 +75,18 @@ export function Sidebar() {
 
       {/* Bottom section */}
       <div className="p-3 border-t border-sidebar-border space-y-1">
-        <Button
-          variant="sidebar"
-          className={cn("w-full", collapsed ? "justify-center px-0" : "justify-start")}
-          title={collapsed ? "Paramètres" : undefined}
-        >
-          <Settings className="w-5 h-5 flex-shrink-0" />
-          {!collapsed && <span>Paramètres</span>}
-        </Button>
+        <NavLink to="/parametres">
+          {({ isActive }) => (
+            <Button
+              variant={isActive ? "sidebar-active" : "sidebar"}
+              className={cn("w-full", collapsed ? "justify-center px-0" : "justify-start")}
+              title={collapsed ? "Paramètres" : undefined}
+            >
+              <Settings className={cn("w-5 h-5 flex-shrink-0", isActive && "text-sidebar-primary")} />
+              {!collapsed && <span>Paramètres</span>}
+            </Button>
+          )}
+        </NavLink>
         <Button
           variant="sidebar"
           className={cn("w-full text-destructive hover:text-destructive", collapsed ? "justify-center px-0" : "justify-start")}
