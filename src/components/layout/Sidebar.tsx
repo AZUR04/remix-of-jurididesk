@@ -17,6 +17,7 @@ import {
   CreditCard
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useSubscription } from "@/contexts/SubscriptionContext";
 import { UpgradeModal } from "@/components/subscription/UpgradeModal";
@@ -37,7 +38,13 @@ export function Sidebar() {
   const [blockedFeature, setBlockedFeature] = useState("");
   const location = useLocation();
   const navigate = useNavigate();
-  const { status } = useSubscription();
+  const { 
+    status, 
+    currentUsage, 
+    limits, 
+    isDossierLimitReached, 
+    isDocumentLimitReached 
+  } = useSubscription();
 
   const handleNavClick = (item: typeof navItems[0], e: React.MouseEvent) => {
     if (item.premium && status === "FREE") {
@@ -97,6 +104,49 @@ export function Sidebar() {
         })}
       </nav>
 
+      {/* Usage Counters for FREE users */}
+      {status === "FREE" && !collapsed && (
+        <div className="px-3 py-3 border-t border-sidebar-border space-y-2">
+          <p className="text-xs text-sidebar-foreground/60 uppercase tracking-wide px-2">Limites FREE</p>
+          <div 
+            className={cn(
+              "flex items-center justify-between px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors",
+              isDossierLimitReached 
+                ? "bg-destructive/20 text-destructive" 
+                : "bg-sidebar-accent/50 text-sidebar-foreground"
+            )}
+            onClick={() => isDossierLimitReached && setUpgradeModalOpen(true)}
+          >
+            <span className="flex items-center gap-2">
+              <FolderOpen className="w-4 h-4" />
+              Dossiers
+            </span>
+            <span className="flex items-center gap-1 font-medium">
+              {currentUsage.dossiers}/{limits.maxDossiers}
+              {isDossierLimitReached && <Crown className="w-3 h-3 text-accent" />}
+            </span>
+          </div>
+          <div 
+            className={cn(
+              "flex items-center justify-between px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors",
+              isDocumentLimitReached 
+                ? "bg-destructive/20 text-destructive" 
+                : "bg-sidebar-accent/50 text-sidebar-foreground"
+            )}
+            onClick={() => isDocumentLimitReached && setUpgradeModalOpen(true)}
+          >
+            <span className="flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              Documents
+            </span>
+            <span className="flex items-center gap-1 font-medium">
+              {currentUsage.documents}/{limits.maxDocuments}
+              {isDocumentLimitReached && <Crown className="w-3 h-3 text-accent" />}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Bottom section */}
       <div className="p-3 border-t border-sidebar-border space-y-1">
         <NavLink to="/abonnement">
@@ -108,6 +158,9 @@ export function Sidebar() {
             >
               <CreditCard className={cn("w-5 h-5 flex-shrink-0", isActive && "text-sidebar-primary")} />
               {!collapsed && <span>Abonnement</span>}
+              {!collapsed && status === "FREE" && (
+                <Badge className="ml-auto text-xs bg-accent text-accent-foreground">Upgrade</Badge>
+              )}
             </Button>
           )}
         </NavLink>

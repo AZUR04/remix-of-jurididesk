@@ -17,9 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, FileText, Image, X, Check } from "lucide-react";
+import { Upload, FileText, Image, X, Check, AlertTriangle, Crown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useSubscription } from "@/contexts/SubscriptionContext";
+import { LimitReachedModal } from "@/components/subscription/LimitReachedModal";
 
 const documentCategories = [
   { id: "conclusions", label: "Conclusions", color: "bg-primary/10 text-primary" },
@@ -61,12 +63,52 @@ export function UploadDialog() {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [selectedCase, setSelectedCase] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [limitModalOpen, setLimitModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { 
+    canUploadDocument, 
+    currentUsage, 
+    limits, 
+    status, 
+    remainingDocuments,
+    isDocumentLimitReached,
+    addDocument
+  } = useSubscription();
+
+  // STRICT: Vérifier la limite AVANT d'ouvrir le dialog
+  const handleOpenDialog = () => {
+    if (!canUploadDocument()) {
+      setLimitModalOpen(true);
+      return;
+    }
+    setOpen(true);
+  };
 
   const handleFileSelect = (selectedFiles: FileList | null) => {
     if (!selectedFiles) return;
 
-    const newFiles: UploadedFile[] = Array.from(selectedFiles).map((file) => {
+    // STRICT: Vérifier la limite avant d'ajouter des fichiers
+    const filesToAdd = Array.from(selectedFiles);
+    const currentFileCount = files.length;
+    const totalAfterAdd = currentUsage.documents + currentFileCount + filesToAdd.length;
+
+    if (status === "FREE" && totalAfterAdd > limits.maxDocuments) {
+      const allowed = Math.max(0, limits.maxDocuments - currentUsage.documents - currentFileCount);
+      if (allowed === 0) {
+        setLimitModalOpen(true);
+        return;
+      }
+      toast({
+        title: "Limite de documents",
+        description: `Vous ne pouvez ajouter que ${allowed} document(s) supplémentaire(s).`,
+        variant: "destructive",
+      });
+      // Ne prendre que les fichiers autorisés
+      filesToAdd.splice(allowed);
+    }
+
+    const newFiles: UploadedFile[] = filesToAdd.map((file) => {
       const category = detectCategory(file.name);
       return {
         file,
@@ -81,6 +123,13 @@ export function UploadDialog() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
+    
+    // STRICT: Vérifier avant le drop
+    if (!canUploadDocument() && files.length === 0) {
+      setLimitModalOpen(true);
+      return;
+    }
+    
     handleFileSelect(e.dataTransfer.files);
   };
 
@@ -124,6 +173,16 @@ export function UploadDialog() {
       return;
     }
 
+    // STRICT: Vérification finale avant upload
+    const totalAfterUpload = currentUsage.documents + files.length;
+    if (status === "FREE" && totalAfterUpload > limits.maxDocuments) {
+      setLimitModalOpen(true);
+      return;
+    }
+
+    // Simuler l'ajout des documents
+    files.forEach(() => addDocument());
+
     toast({
       title: "Documents importés",
       description: `${files.length} fichier(s) ajouté(s) au dossier.`,
@@ -145,133 +204,174 @@ export function UploadDialog() {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="gold" className="gap-2">
-          <Upload className="w-4 h-4" />
-          Importer
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="font-display">Importer des documents</DialogTitle>
-        </DialogHeader>
+    <>
+      <Button 
+        variant="gold" 
+        className="gap-2" 
+        onClick={handleOpenDialog}
+      >
+        <Upload className="w-4 h-4" />
+        Importer
+        {status === "FREE" && (
+          <Badge variant="outline" className="ml-1 text-xs bg-background/50">
+            {currentUsage.documents}/{limits.maxDocuments}
+          </Badge>
+        )}
+      </Button>
 
-        <div className="space-y-6 py-4">
-          {/* Drop Zone */}
-          <div
-            className={cn(
-              "border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer",
-              isDragging
-                ? "border-primary bg-primary/5"
-                : "border-border hover:border-primary/50"
-            )}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls"
-              className="hidden"
-              onChange={(e) => handleFileSelect(e.target.files)}
-            />
-            <Upload className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <p className="font-medium text-foreground mb-1">
-              Glissez vos fichiers ici
-            </p>
-            <p className="text-sm text-muted-foreground">
-              ou cliquez pour sélectionner (PDF, Word, Excel, Images)
-            </p>
-          </div>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              Importer des documents
+              {status === "FREE" && (
+                <Badge variant={isDocumentLimitReached ? "destructive" : "secondary"} className="text-xs">
+                  {currentUsage.documents}/{limits.maxDocuments} utilisés
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
 
-          {/* Selected Files */}
-          {files.length > 0 && (
-            <div className="space-y-3">
-              <Label>Fichiers sélectionnés ({files.length})</Label>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {files.map((uploadedFile, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                      {getFileIcon(uploadedFile.file.type)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">
-                        {uploadedFile.file.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatFileSize(uploadedFile.file.size)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={uploadedFile.category}
-                        onValueChange={(value) => updateFileCategory(index, value)}
-                      >
-                        <SelectTrigger className="w-40 h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {documentCategories.map((cat) => (
-                            <SelectItem key={cat.id} value={cat.id}>
-                              {cat.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {uploadedFile.autoDetected && (
-                        <Badge variant="outline" className="text-xs gap-1">
-                          <Check className="w-3 h-3" />
-                          Auto
-                        </Badge>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => removeFile(index)}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+          {/* Alerte limite proche */}
+          {status === "FREE" && remainingDocuments <= 2 && remainingDocuments > 0 && (
+            <div className="p-3 rounded-lg border bg-warning/5 border-warning/20 flex items-center gap-2 text-sm">
+              <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
+              <span>
+                Il vous reste {remainingDocuments} document(s) avant d'atteindre la limite FREE.
+              </span>
             </div>
           )}
 
-          {/* Destination Case */}
-          <div className="space-y-2">
-            <Label>Dossier de destination *</Label>
-            <Select value={selectedCase} onValueChange={setSelectedCase}>
-              <SelectTrigger>
-                <SelectValue placeholder="Sélectionner un dossier" />
-              </SelectTrigger>
-              <SelectContent>
-                {cases.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+          <div className="space-y-6 py-4">
+            {/* Drop Zone */}
+            <div
+              className={cn(
+                "border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer",
+                isDragging
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-primary/50",
+                isDocumentLimitReached && files.length === 0 && "opacity-50 cursor-not-allowed"
+              )}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onClick={() => {
+                if (isDocumentLimitReached && files.length === 0) {
+                  setLimitModalOpen(true);
+                  return;
+                }
+                fileInputRef.current?.click();
+              }}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls"
+                className="hidden"
+                onChange={(e) => handleFileSelect(e.target.files)}
+              />
+              <Upload className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+              <p className="font-medium text-foreground mb-1">
+                Glissez vos fichiers ici
+              </p>
+              <p className="text-sm text-muted-foreground">
+                ou cliquez pour sélectionner (PDF, Word, Excel, Images)
+              </p>
+            </div>
 
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => setOpen(false)}>
-            Annuler
-          </Button>
-          <Button variant="gold" onClick={handleUpload} disabled={files.length === 0}>
-            Importer {files.length > 0 && `(${files.length})`}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+            {/* Selected Files */}
+            {files.length > 0 && (
+              <div className="space-y-3">
+                <Label>Fichiers sélectionnés ({files.length})</Label>
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {files.map((uploadedFile, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30"
+                    >
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                        {getFileIcon(uploadedFile.file.type)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">
+                          {uploadedFile.file.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatFileSize(uploadedFile.file.size)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={uploadedFile.category}
+                          onValueChange={(value) => updateFileCategory(index, value)}
+                        >
+                          <SelectTrigger className="w-40 h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {documentCategories.map((cat) => (
+                              <SelectItem key={cat.id} value={cat.id}>
+                                {cat.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {uploadedFile.autoDetected && (
+                          <Badge variant="outline" className="text-xs gap-1">
+                            <Check className="w-3 h-3" />
+                            Auto
+                          </Badge>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => removeFile(index)}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Destination Case */}
+            <div className="space-y-2">
+              <Label>Dossier de destination *</Label>
+              <Select value={selectedCase} onValueChange={setSelectedCase}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Sélectionner un dossier" />
+                </SelectTrigger>
+                <SelectContent>
+                  {cases.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Annuler
+            </Button>
+            <Button variant="gold" onClick={handleUpload} disabled={files.length === 0}>
+              Importer {files.length > 0 && `(${files.length})`}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* STRICT: Modal limite - pas de contournement */}
+      <LimitReachedModal
+        open={limitModalOpen}
+        onOpenChange={setLimitModalOpen}
+        resource="documents"
+      />
+    </>
   );
 }
