@@ -7,6 +7,7 @@ import {
   FileText, 
   MessageSquare, 
   CheckSquare,
+  BarChart3,
   Scale,
   ChevronLeft,
   ChevronRight,
@@ -23,6 +24,7 @@ const navItems = [
   { icon: FileText, label: "Documents", path: "/documents" },
   { icon: MessageSquare, label: "Messages", path: "/messages" },
   { icon: CheckSquare, label: "Tâches", path: "/taches" },
+  { icon: BarChart3, label: "Reporting", path: "/reporting" },
 ];
 
 export function Sidebar() {
