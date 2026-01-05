@@ -15,6 +15,8 @@ import {
 import { useSubscription } from "@/contexts/SubscriptionContext";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { PLANS, SubscriptionPlan } from "@/types/subscription";
+import { PlanBadge } from "@/components/subscription/PlanBadge";
 import {
   Crown,
   Check,
@@ -29,20 +31,11 @@ import {
   FolderPlus,
   Shield,
   Sparkles,
+  Users,
+  Building2,
 } from "lucide-react";
 
-// Features comparison
-const features = [
-  { name: "Dossiers", free: "1 maximum", premium: "Illimités", icon: "folder" },
-  { name: "Utilisateurs", free: "1 maximum", premium: "Illimités", icon: "users" },
-  { name: "Documents", free: "5 maximum", premium: "Illimités", icon: "file" },
-  { name: "Rappels automatiques", free: false, premium: true, icon: "bell" },
-  { name: "Rappels WhatsApp", free: false, premium: true, icon: "phone" },
-  { name: "Chat interne", free: false, premium: true, icon: "message" },
-  { name: "Gestion des tâches", free: false, premium: true, icon: "check" },
-  { name: "Reporting complet", free: false, premium: true, icon: "chart" },
-  { name: "Support prioritaire", free: false, premium: true, icon: "support" },
-];
+const planOrder: SubscriptionPlan[] = ["FREE", "PREMIUM", "TEAM", "CABINET", "CABINET_XXL"];
 
 const paymentStatusStyles = {
   success: { label: "Réussi", icon: CheckCircle2, className: "text-success" },
@@ -51,18 +44,52 @@ const paymentStatusStyles = {
 };
 
 export default function Abonnement() {
-  const { status, paymentHistory, upgradeToPremium, currentUsage } = useSubscription();
+  const { 
+    plan, 
+    planConfig, 
+    paymentHistory, 
+    currentUsage, 
+    limits,
+    extraDossiers,
+    upgradePlan, 
+    purchaseExtraDossier,
+    processKPayPayment 
+  } = useSubscription();
   const { toast } = useToast();
+  
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<"premium" | "dossier" | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<{ type: "plan" | "dossier"; plan?: SubscriptionPlan } | null>(null);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentStep, setPaymentStep] = useState<"form" | "processing" | "success" | "error">("form");
 
-  const handleSelectProduct = (product: "premium" | "dossier") => {
-    setSelectedProduct(product);
+  const handleSelectPlan = (targetPlan: SubscriptionPlan) => {
+    if (targetPlan === plan) return;
+    setSelectedProduct({ type: "plan", plan: targetPlan });
     setPaymentStep("form");
     setPaymentDialogOpen(true);
+  };
+
+  const handleBuyDossier = () => {
+    setSelectedProduct({ type: "dossier" });
+    setPaymentStep("form");
+    setPaymentDialogOpen(true);
+  };
+
+  const getPaymentAmount = () => {
+    if (!selectedProduct) return 0;
+    if (selectedProduct.type === "dossier") {
+      return planConfig.extraDossierPrice || 5000;
+    }
+    return selectedProduct.plan ? PLANS[selectedProduct.plan].price : 0;
+  };
+
+  const getPaymentDescription = () => {
+    if (!selectedProduct) return "";
+    if (selectedProduct.type === "dossier") {
+      return "Dossier supplémentaire";
+    }
+    return `Abonnement ${selectedProduct.plan}`;
   };
 
   const handlePayment = async () => {
@@ -78,28 +105,34 @@ export default function Abonnement() {
     setIsProcessing(true);
     setPaymentStep("processing");
 
-    // Simulate YabetooPay API call
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    const result = await processKPayPayment({
+      amount: getPaymentAmount(),
+      phoneNumber,
+      description: getPaymentDescription(),
+      reference: `KPAY-${Date.now()}`,
+    });
 
-    // Simulate success (80% chance)
-    const success = Math.random() > 0.2;
-
-    if (success) {
+    if (result.success) {
       setPaymentStep("success");
-      if (selectedProduct === "premium") {
-        upgradeToPremium();
+      
+      if (selectedProduct?.type === "plan" && selectedProduct.plan) {
+        await upgradePlan(selectedProduct.plan);
+        toast({
+          title: "Paiement réussi !",
+          description: `Votre abonnement ${selectedProduct.plan} est maintenant actif.`,
+        });
+      } else if (selectedProduct?.type === "dossier") {
+        await purchaseExtraDossier();
+        toast({
+          title: "Paiement réussi !",
+          description: "Votre dossier supplémentaire a été ajouté.",
+        });
       }
-      toast({
-        title: "Paiement réussi !",
-        description: selectedProduct === "premium" 
-          ? "Votre abonnement PREMIUM est maintenant actif."
-          : "Votre dossier supplémentaire a été ajouté.",
-      });
     } else {
       setPaymentStep("error");
       toast({
         title: "Échec du paiement",
-        description: "La transaction a échoué. Veuillez réessayer.",
+        description: result.error || "La transaction a échoué. Veuillez réessayer.",
         variant: "destructive",
       });
     }
@@ -122,7 +155,7 @@ export default function Abonnement() {
       {/* Current Status Banner */}
       <div className={cn(
         "mb-6 p-6 rounded-xl border animate-fade-in",
-        status === "PREMIUM" 
+        plan !== "FREE" 
           ? "bg-accent/5 border-accent/20" 
           : "bg-muted/50 border-border"
       )}>
@@ -130,9 +163,9 @@ export default function Abonnement() {
           <div className="flex items-center gap-4">
             <div className={cn(
               "w-14 h-14 rounded-xl flex items-center justify-center",
-              status === "PREMIUM" ? "gradient-gold" : "bg-muted"
+              plan !== "FREE" ? "gradient-gold" : "bg-muted"
             )}>
-              {status === "PREMIUM" ? (
+              {plan !== "FREE" ? (
                 <Crown className="w-7 h-7 text-primary" />
               ) : (
                 <Shield className="w-7 h-7 text-muted-foreground" />
@@ -141,151 +174,135 @@ export default function Abonnement() {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-2xl font-display font-bold">
-                  Abonnement {status}
+                  Abonnement
                 </h2>
-                <Badge variant={status === "PREMIUM" ? "default" : "secondary"}>
-                  {status === "PREMIUM" ? "Actif" : "Gratuit"}
-                </Badge>
+                <PlanBadge plan={plan} size="lg" />
               </div>
               <p className="text-muted-foreground">
-                {status === "PREMIUM"
-                  ? "Profitez de toutes les fonctionnalités de JuridiDesk"
-                  : "Passez à PREMIUM pour débloquer toutes les fonctionnalités"}
+                {plan === "FREE"
+                  ? "Passez à un plan supérieur pour débloquer toutes les fonctionnalités"
+                  : "Profitez de toutes les fonctionnalités de JuridiDesk"}
               </p>
             </div>
           </div>
-          {status === "FREE" && (
-            <Button variant="gold" size="lg" onClick={() => handleSelectProduct("premium")} className="gap-2">
-              <Crown className="w-5 h-5" />
-              Passer à PREMIUM
-            </Button>
-          )}
         </div>
 
-        {/* Usage stats for FREE */}
-        {status === "FREE" && (
-          <div className="mt-6 grid grid-cols-3 gap-4">
-            <div className="p-4 rounded-lg bg-background/80">
-              <p className="text-sm text-muted-foreground">Dossiers</p>
-              <p className="text-2xl font-bold">{currentUsage.dossiers}/1</p>
-            </div>
-            <div className="p-4 rounded-lg bg-background/80">
-              <p className="text-sm text-muted-foreground">Utilisateurs</p>
-              <p className="text-2xl font-bold">{currentUsage.users}/1</p>
-            </div>
-            <div className="p-4 rounded-lg bg-background/80">
-              <p className="text-sm text-muted-foreground">Documents</p>
-              <p className="text-2xl font-bold">{currentUsage.documents}/5</p>
-            </div>
+        {/* Usage stats */}
+        <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="p-4 rounded-lg bg-background/80">
+            <p className="text-sm text-muted-foreground">Dossiers</p>
+            <p className="text-2xl font-bold">
+              {currentUsage.dossiers}/{limits.maxDossiers === Infinity ? "∞" : limits.maxDossiers + extraDossiers}
+            </p>
           </div>
-        )}
+          <div className="p-4 rounded-lg bg-background/80">
+            <p className="text-sm text-muted-foreground">Documents</p>
+            <p className="text-2xl font-bold">
+              {currentUsage.documents}/{limits.maxDocuments === Infinity ? "∞" : limits.maxDocuments}
+            </p>
+          </div>
+          <div className="p-4 rounded-lg bg-background/80">
+            <p className="text-sm text-muted-foreground">Utilisateurs</p>
+            <p className="text-2xl font-bold">
+              {currentUsage.users}/{limits.maxUsers === Infinity ? "∞" : limits.maxUsers}
+            </p>
+          </div>
+          {extraDossiers > 0 && (
+            <div className="p-4 rounded-lg bg-accent/10 border border-accent/20">
+              <p className="text-sm text-muted-foreground">Dossiers bonus</p>
+              <p className="text-2xl font-bold text-accent">+{extraDossiers}</p>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Pricing Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* FREE Plan */}
-        <Card className={cn(
-          "relative opacity-0 animate-fade-in",
-          status === "FREE" && "ring-2 ring-primary"
-        )} style={{ animationDelay: "100ms" }}>
-          {status === "FREE" && (
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-              <Badge>Votre plan actuel</Badge>
-            </div>
-          )}
-          <CardHeader className="text-center pb-2">
-            <CardTitle className="font-display text-2xl">FREE</CardTitle>
-            <p className="text-4xl font-bold font-display mt-2">
-              0 FC<span className="text-base font-normal text-muted-foreground">/mois</span>
-            </p>
-          </CardHeader>
-          <CardContent>
-            <p className="text-center text-muted-foreground mb-6">
-              Pour découvrir JuridiDesk
-            </p>
-            <ul className="space-y-3">
-              {features.map((feature) => (
-                <li key={feature.name} className="flex items-center gap-3">
-                  {typeof feature.free === "boolean" ? (
-                    feature.free ? (
-                      <Check className="w-5 h-5 text-success flex-shrink-0" />
-                    ) : (
-                      <X className="w-5 h-5 text-muted-foreground/50 flex-shrink-0" />
-                    )
-                  ) : (
-                    <Check className="w-5 h-5 text-success flex-shrink-0" />
-                  )}
-                  <span className={cn(
-                    typeof feature.free === "boolean" && !feature.free && "text-muted-foreground/50"
-                  )}>
-                    {feature.name}
-                    {typeof feature.free === "string" && (
-                      <span className="text-muted-foreground ml-1">({feature.free})</span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-
-        {/* PREMIUM Plan */}
-        <Card className={cn(
-          "relative opacity-0 animate-fade-in border-accent/30 bg-accent/5",
-          status === "PREMIUM" && "ring-2 ring-accent"
-        )} style={{ animationDelay: "150ms" }}>
-          {status === "PREMIUM" && (
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-              <Badge className="bg-accent text-accent-foreground">Votre plan actuel</Badge>
-            </div>
-          )}
-          <div className="absolute top-4 right-4">
-            <Sparkles className="w-6 h-6 text-accent" />
-          </div>
-          <CardHeader className="text-center pb-2">
-            <CardTitle className="font-display text-2xl flex items-center justify-center gap-2">
-              <Crown className="w-6 h-6 text-accent" />
-              PREMIUM
-            </CardTitle>
-            <p className="text-4xl font-bold font-display mt-2">
-              35 000 FC<span className="text-base font-normal text-muted-foreground">/mois</span>
-            </p>
-          </CardHeader>
-          <CardContent>
-            <p className="text-center text-muted-foreground mb-6">
-              Pour les cabinets professionnels
-            </p>
-            <ul className="space-y-3">
-              {features.map((feature) => (
-                <li key={feature.name} className="flex items-center gap-3">
-                  <Check className="w-5 h-5 text-accent flex-shrink-0" />
-                  <span>
-                    {feature.name}
-                    {typeof feature.premium === "string" && (
-                      <span className="text-accent ml-1">({feature.premium})</span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            {status === "FREE" && (
-              <Button 
-                variant="gold" 
-                size="lg" 
-                className="w-full mt-6 gap-2"
-                onClick={() => handleSelectProduct("premium")}
+      {/* Plans Grid */}
+      <div className="mb-8">
+        <h3 className="text-xl font-display font-bold mb-4">Choisissez votre plan</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {planOrder.map((planId, index) => {
+            const planData = PLANS[planId];
+            const isCurrent = plan === planId;
+            const isUpgrade = planOrder.indexOf(planId) > planOrder.indexOf(plan);
+            
+            return (
+              <Card 
+                key={planId}
+                className={cn(
+                  "relative opacity-0 animate-fade-in transition-all",
+                  isCurrent && "ring-2 ring-accent",
+                  planData.popular && "border-accent/50 bg-accent/5"
+                )} 
+                style={{ animationDelay: `${index * 50}ms` }}
               >
-                <Crown className="w-5 h-5" />
-                S'abonner maintenant
-              </Button>
-            )}
-          </CardContent>
-        </Card>
+                {planData.popular && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <Badge className="bg-accent text-accent-foreground">Populaire</Badge>
+                  </div>
+                )}
+                {isCurrent && (
+                  <div className="absolute -top-3 right-4">
+                    <Badge variant="outline">Actuel</Badge>
+                  </div>
+                )}
+                
+                <CardHeader className="text-center pb-2">
+                  <CardTitle className="font-display text-lg flex items-center justify-center gap-2">
+                    {planId === "PREMIUM" && <Crown className="w-5 h-5 text-accent" />}
+                    {planId === "TEAM" && <Users className="w-5 h-5 text-primary" />}
+                    {(planId === "CABINET" || planId === "CABINET_XXL") && <Building2 className="w-5 h-5 text-success" />}
+                    {planData.name}
+                  </CardTitle>
+                  <p className="text-2xl font-bold font-display mt-2">
+                    {planData.price === 0 ? "Gratuit" : (
+                      <>
+                        {planData.price.toLocaleString()} FC
+                        <span className="text-sm font-normal text-muted-foreground">/mois</span>
+                      </>
+                    )}
+                  </p>
+                </CardHeader>
+                
+                <CardContent className="text-center">
+                  <p className="text-sm text-muted-foreground mb-4">{planData.description}</p>
+                  
+                  <ul className="space-y-2 text-sm text-left mb-4">
+                    {planData.features.slice(0, 4).map((feature, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-success flex-shrink-0 mt-0.5" />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  
+                  {isUpgrade ? (
+                    <Button 
+                      variant={planData.popular ? "gold" : "outline"} 
+                      size="sm" 
+                      className="w-full"
+                      onClick={() => handleSelectPlan(planId)}
+                    >
+                      Passer à {planData.name}
+                    </Button>
+                  ) : isCurrent ? (
+                    <Button variant="outline" size="sm" className="w-full" disabled>
+                      Plan actuel
+                    </Button>
+                  ) : (
+                    <Button variant="ghost" size="sm" className="w-full" disabled>
+                      —
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Additional Dossier (PREMIUM only) */}
-      {status === "PREMIUM" && (
-        <Card className="mb-8 opacity-0 animate-fade-in" style={{ animationDelay: "200ms" }}>
+      {/* Additional Dossier (non-FREE plans) */}
+      {plan !== "FREE" && planConfig.extraDossierPrice && (
+        <Card className="mb-8 opacity-0 animate-fade-in" style={{ animationDelay: "300ms" }}>
           <CardHeader>
             <CardTitle className="font-display text-lg flex items-center gap-2">
               <FolderPlus className="w-5 h-5 text-accent" />
@@ -299,10 +316,11 @@ export default function Abonnement() {
                   Ajoutez des dossiers supplémentaires à la demande
                 </p>
                 <p className="text-2xl font-bold font-display mt-2">
-                  5 000 FC<span className="text-sm font-normal text-muted-foreground">/dossier</span>
+                  {planConfig.extraDossierPrice.toLocaleString()} FC
+                  <span className="text-sm font-normal text-muted-foreground">/dossier</span>
                 </p>
               </div>
-              <Button variant="outline" onClick={() => handleSelectProduct("dossier")} className="gap-2">
+              <Button variant="outline" onClick={handleBuyDossier} className="gap-2">
                 <FolderPlus className="w-4 h-4" />
                 Ajouter un dossier
               </Button>
@@ -312,7 +330,7 @@ export default function Abonnement() {
       )}
 
       {/* Payment History */}
-      <Card className="opacity-0 animate-fade-in" style={{ animationDelay: "250ms" }}>
+      <Card className="opacity-0 animate-fade-in" style={{ animationDelay: "350ms" }}>
         <CardHeader>
           <CardTitle className="font-display text-lg flex items-center gap-2">
             <History className="w-5 h-5" />
@@ -371,7 +389,7 @@ export default function Abonnement() {
         </CardContent>
       </Card>
 
-      {/* Payment Dialog */}
+      {/* K-Pay Payment Dialog */}
       <Dialog open={paymentDialogOpen} onOpenChange={closeDialog}>
         <DialogContent className="sm:max-w-md">
           {paymentStep === "form" && (
@@ -381,26 +399,19 @@ export default function Abonnement() {
                   <Smartphone className="w-8 h-8 text-primary" />
                 </div>
                 <DialogTitle className="font-display text-2xl">
-                  Paiement Mobile Money
+                  Paiement K-Pay
                 </DialogTitle>
                 <DialogDescription>
-                  {selectedProduct === "premium"
-                    ? "Abonnement PREMIUM - 35 000 FC/mois"
-                    : "Dossier supplémentaire - 5 000 FC"}
+                  {getPaymentDescription()} - {getPaymentAmount().toLocaleString()} FC
                 </DialogDescription>
               </DialogHeader>
 
               <div className="py-4">
                 <div className="mb-4 p-4 rounded-lg bg-muted/50 text-center">
-                  <img 
-                    src="https://yabetoopay.com/images/logo.png" 
-                    alt="YabetooPay" 
-                    className="h-8 mx-auto mb-2"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                  />
-                  <p className="text-sm text-muted-foreground">Paiement sécurisé via YabetooPay</p>
+                  <div className="w-12 h-12 mx-auto mb-2 bg-primary/10 rounded-full flex items-center justify-center">
+                    <CreditCard className="w-6 h-6 text-primary" />
+                  </div>
+                  <p className="text-sm text-muted-foreground">Paiement sécurisé via K-Pay Mobile Money</p>
                 </div>
 
                 <div className="space-y-4">
@@ -423,7 +434,7 @@ export default function Abonnement() {
                     <div className="flex justify-between items-center">
                       <span className="text-muted-foreground">Montant à payer</span>
                       <span className="text-xl font-bold">
-                        {selectedProduct === "premium" ? "35 000" : "5 000"} FC
+                        {getPaymentAmount().toLocaleString()} FC
                       </span>
                     </div>
                   </div>
@@ -463,8 +474,8 @@ export default function Abonnement() {
                 Paiement réussi !
               </h3>
               <p className="text-muted-foreground mb-6">
-                {selectedProduct === "premium"
-                  ? "Votre abonnement PREMIUM est maintenant actif."
+                {selectedProduct?.type === "plan"
+                  ? `Votre abonnement ${selectedProduct.plan} est maintenant actif.`
                   : "Votre dossier supplémentaire a été ajouté."}
               </p>
               <Button variant="gold" onClick={closeDialog}>

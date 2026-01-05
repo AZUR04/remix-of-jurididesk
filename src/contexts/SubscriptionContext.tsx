@@ -1,164 +1,287 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode } from "react";
-
-export type SubscriptionStatus = "FREE" | "PREMIUM";
-
-export interface SubscriptionLimits {
-  maxDossiers: number;
-  maxUsers: number;
-  maxDocuments: number;
-  hasReminders: boolean;
-  hasChat: boolean;
-  hasTasks: boolean;
-  hasReporting: boolean;
-}
-
-export interface PaymentHistoryItem {
-  id: string;
-  date: string;
-  amount: number;
-  description: string;
-  status: "success" | "failed" | "pending";
-  reference: string;
-}
+import { doc, updateDoc, increment, collection, addDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { useAuth } from "@/contexts/AuthContext";
+import { 
+  SubscriptionPlan, 
+  PlanLimits, 
+  PLANS, 
+  PaymentHistoryItem,
+  KPayPaymentRequest 
+} from "@/types/subscription";
 
 interface SubscriptionContextType {
-  status: SubscriptionStatus;
-  limits: SubscriptionLimits;
+  // Plan info
+  plan: SubscriptionPlan;
+  planConfig: typeof PLANS[SubscriptionPlan];
+  limits: PlanLimits;
+  
+  // Usage
   currentUsage: {
     dossiers: number;
-    users: number;
     documents: number;
+    users: number;
   };
-  paymentHistory: PaymentHistoryItem[];
-  // Feature access
-  checkAccess: (feature: keyof Omit<SubscriptionLimits, 'maxDossiers' | 'maxUsers' | 'maxDocuments'>) => boolean;
-  // Resource limits - strict checks
-  canCreateDossier: () => boolean;
-  canUploadDocument: () => boolean;
-  // Remaining counts
+  extraDossiers: number;
+  
+  // Remaining
   remainingDossiers: number;
   remainingDocuments: number;
+  remainingUsers: number;
+  
   // Limit checks
   isDossierLimitReached: boolean;
   isDocumentLimitReached: boolean;
+  isUserLimitReached: boolean;
+  
+  // Access checks
+  canCreateDossier: () => boolean;
+  canUploadDocument: () => boolean;
+  canAddUser: () => boolean;
+  canAccessChat: () => boolean;
+  canAccessTasks: () => boolean;
+  canAccessReporting: () => boolean;
+  canAccessAdvancedReporting: () => boolean;
+  canExportWithoutWatermark: () => boolean;
+  
+  // Payment history
+  paymentHistory: PaymentHistoryItem[];
+  
   // Actions
-  upgradeToPremium: () => void;
-  setStatus: (status: SubscriptionStatus) => void;
-  // Mock usage updaters (for demo)
+  upgradePlan: (newPlan: SubscriptionPlan) => Promise<boolean>;
+  purchaseExtraDossier: () => Promise<boolean>;
+  processKPayPayment: (request: KPayPaymentRequest) => Promise<{ success: boolean; error?: string }>;
+  
+  // Usage updaters
   addDossier: () => void;
   addDocument: () => void;
+  
+  // Refresh
+  refreshSubscription: () => Promise<void>;
 }
-
-const FREE_LIMITS: SubscriptionLimits = {
-  maxDossiers: 1,
-  maxUsers: 1,
-  maxDocuments: 5,
-  hasReminders: false,
-  hasChat: false,
-  hasTasks: false,
-  hasReporting: false,
-};
-
-const PREMIUM_LIMITS: SubscriptionLimits = {
-  maxDossiers: Infinity,
-  maxUsers: Infinity,
-  maxDocuments: Infinity,
-  hasReminders: true,
-  hasChat: true,
-  hasTasks: true,
-  hasReporting: true,
-};
 
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
 
 export function SubscriptionProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<SubscriptionStatus>("FREE");
-  const [currentUsage, setCurrentUsage] = useState({
-    dossiers: 1,
-    users: 1,
-    documents: 3,
-  });
+  const auth = useAuth();
+  const cabinetData = auth?.cabinetData;
+  const refreshCabinetData = auth?.refreshCabinetData;
+  
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistoryItem[]>([]);
-
-  const limits = useMemo(() => 
-    status === "PREMIUM" ? PREMIUM_LIMITS : FREE_LIMITS
-  , [status]);
-
-  // STRICT limit calculations
+  
+  // Get plan from cabinet data or default to FREE
+  const plan: SubscriptionPlan = cabinetData?.plan || "FREE";
+  const planConfig = PLANS[plan];
+  const limits = planConfig.limits;
+  
+  // Current usage from cabinet data
+  const currentUsage = useMemo(() => ({
+    dossiers: cabinetData?.dossierCount || 0,
+    documents: cabinetData?.documentCount || 0,
+    users: cabinetData?.users?.length || 1,
+  }), [cabinetData]);
+  
+  const extraDossiers = cabinetData?.extraDossiers || 0;
+  
+  // Calculate effective dossier limit (base + extra)
+  const effectiveDossierLimit = useMemo(() => {
+    if (limits.maxDossiers === Infinity) return Infinity;
+    return limits.maxDossiers + extraDossiers;
+  }, [limits.maxDossiers, extraDossiers]);
+  
+  // Remaining calculations
   const remainingDossiers = useMemo(() => {
-    if (status === "PREMIUM") return Infinity;
-    return Math.max(0, limits.maxDossiers - currentUsage.dossiers);
-  }, [status, limits.maxDossiers, currentUsage.dossiers]);
-
+    if (effectiveDossierLimit === Infinity) return Infinity;
+    return Math.max(0, effectiveDossierLimit - currentUsage.dossiers);
+  }, [effectiveDossierLimit, currentUsage.dossiers]);
+  
   const remainingDocuments = useMemo(() => {
-    if (status === "PREMIUM") return Infinity;
+    if (limits.maxDocuments === Infinity) return Infinity;
     return Math.max(0, limits.maxDocuments - currentUsage.documents);
-  }, [status, limits.maxDocuments, currentUsage.documents]);
-
+  }, [limits.maxDocuments, currentUsage.documents]);
+  
+  const remainingUsers = useMemo(() => {
+    if (limits.maxUsers === Infinity) return Infinity;
+    return Math.max(0, limits.maxUsers - currentUsage.users);
+  }, [limits.maxUsers, currentUsage.users]);
+  
+  // Limit reached checks
   const isDossierLimitReached = useMemo(() => {
-    if (status === "PREMIUM") return false;
-    return currentUsage.dossiers >= limits.maxDossiers;
-  }, [status, currentUsage.dossiers, limits.maxDossiers]);
-
+    if (effectiveDossierLimit === Infinity) return false;
+    return currentUsage.dossiers >= effectiveDossierLimit;
+  }, [currentUsage.dossiers, effectiveDossierLimit]);
+  
   const isDocumentLimitReached = useMemo(() => {
-    if (status === "PREMIUM") return false;
+    if (limits.maxDocuments === Infinity) return false;
     return currentUsage.documents >= limits.maxDocuments;
-  }, [status, currentUsage.documents, limits.maxDocuments]);
-
-  // STRICT access checks - NO bypass allowed
+  }, [currentUsage.documents, limits.maxDocuments]);
+  
+  const isUserLimitReached = useMemo(() => {
+    if (limits.maxUsers === Infinity) return false;
+    return currentUsage.users >= limits.maxUsers;
+  }, [currentUsage.users, limits.maxUsers]);
+  
+  // Access check functions
   const canCreateDossier = useCallback(() => {
-    if (status === "PREMIUM") return true;
-    return currentUsage.dossiers < limits.maxDossiers;
-  }, [status, currentUsage.dossiers, limits.maxDossiers]);
-
+    return !isDossierLimitReached;
+  }, [isDossierLimitReached]);
+  
   const canUploadDocument = useCallback(() => {
-    if (status === "PREMIUM") return true;
-    return currentUsage.documents < limits.maxDocuments;
-  }, [status, currentUsage.documents, limits.maxDocuments]);
-
-  const checkAccess = useCallback((feature: keyof Omit<SubscriptionLimits, 'maxDossiers' | 'maxUsers' | 'maxDocuments'>) => {
-    return limits[feature];
-  }, [limits]);
-
-  const upgradeToPremium = useCallback(() => {
-    setStatus("PREMIUM");
-    setPaymentHistory(prev => [{
-      id: Date.now().toString(),
-      date: new Date().toISOString().split('T')[0],
-      amount: 35000,
-      description: "Abonnement PREMIUM",
-      status: "success",
-      reference: `YBT-${Date.now()}`,
-    }, ...prev]);
-  }, []);
-
-  // Mock functions for demo
-  const addDossier = useCallback(() => {
-    setCurrentUsage(prev => ({ ...prev, dossiers: prev.dossiers + 1 }));
-  }, []);
-
-  const addDocument = useCallback(() => {
-    setCurrentUsage(prev => ({ ...prev, documents: prev.documents + 1 }));
-  }, []);
+    return !isDocumentLimitReached;
+  }, [isDocumentLimitReached]);
+  
+  const canAddUser = useCallback(() => {
+    return !isUserLimitReached;
+  }, [isUserLimitReached]);
+  
+  const canAccessChat = useCallback(() => limits.hasChat, [limits.hasChat]);
+  const canAccessTasks = useCallback(() => limits.hasTasks, [limits.hasTasks]);
+  const canAccessReporting = useCallback(() => limits.hasReporting, [limits.hasReporting]);
+  const canAccessAdvancedReporting = useCallback(() => limits.hasAdvancedReporting, [limits.hasAdvancedReporting]);
+  const canExportWithoutWatermark = useCallback(() => !limits.hasWatermark, [limits.hasWatermark]);
+  
+  // Process K-Pay payment
+  const processKPayPayment = useCallback(async (request: KPayPaymentRequest): Promise<{ success: boolean; error?: string }> => {
+    // Simulate K-Pay API call
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    
+    // Simulate 80% success rate
+    const success = Math.random() > 0.2;
+    
+    if (success) {
+      // Add to payment history in Firestore
+      if (cabinetData?.id) {
+        const payment: Omit<PaymentHistoryItem, 'id'> = {
+          cabinetId: cabinetData.id,
+          date: new Date().toISOString(),
+          amount: request.amount,
+          description: request.description,
+          status: "success",
+          reference: request.reference,
+          method: "kpay",
+          phoneNumber: request.phoneNumber,
+        };
+        
+        try {
+          await addDoc(collection(db, "payments"), payment);
+          setPaymentHistory(prev => [{ ...payment, id: Date.now().toString() }, ...prev]);
+        } catch (err) {
+          console.error("Error saving payment:", err);
+        }
+      }
+      
+      return { success: true };
+    }
+    
+    return { success: false, error: "La transaction a échoué. Veuillez vérifier votre solde." };
+  }, [cabinetData?.id]);
+  
+  // Upgrade plan
+  const upgradePlan = useCallback(async (newPlan: SubscriptionPlan): Promise<boolean> => {
+    if (!cabinetData?.id) return false;
+    
+    try {
+      const cabinetRef = doc(db, "cabinets", cabinetData.id);
+      await updateDoc(cabinetRef, {
+        plan: newPlan,
+        updatedAt: new Date().toISOString(),
+      });
+      
+      if (refreshCabinetData) await refreshCabinetData();
+      return true;
+    } catch (err) {
+      console.error("Error upgrading plan:", err);
+      return false;
+    }
+  }, [cabinetData?.id, refreshCabinetData]);
+  
+  // Purchase extra dossier
+  const purchaseExtraDossier = useCallback(async (): Promise<boolean> => {
+    if (!cabinetData?.id) return false;
+    if (plan === "FREE") return false; // Only PREMIUM+ can buy extra dossiers
+    
+    try {
+      const cabinetRef = doc(db, "cabinets", cabinetData.id);
+      await updateDoc(cabinetRef, {
+        extraDossiers: increment(1),
+        updatedAt: new Date().toISOString(),
+      });
+      
+      if (refreshCabinetData) await refreshCabinetData();
+      return true;
+    } catch (err) {
+      console.error("Error purchasing extra dossier:", err);
+      return false;
+    }
+  }, [cabinetData?.id, plan, refreshCabinetData]);
+  
+  // Mock usage updaters for demo
+  const addDossier = useCallback(async () => {
+    if (!cabinetData?.id) return;
+    
+    try {
+      const cabinetRef = doc(db, "cabinets", cabinetData.id);
+      await updateDoc(cabinetRef, {
+        dossierCount: increment(1),
+        updatedAt: new Date().toISOString(),
+      });
+      
+      if (refreshCabinetData) await refreshCabinetData();
+    } catch (err) {
+      console.error("Error adding dossier:", err);
+    }
+  }, [cabinetData?.id, refreshCabinetData]);
+  
+  const addDocument = useCallback(async () => {
+    if (!cabinetData?.id) return;
+    
+    try {
+      const cabinetRef = doc(db, "cabinets", cabinetData.id);
+      await updateDoc(cabinetRef, {
+        documentCount: increment(1),
+        updatedAt: new Date().toISOString(),
+      });
+      
+      if (refreshCabinetData) await refreshCabinetData();
+    } catch (err) {
+      console.error("Error adding document:", err);
+    }
+  }, [cabinetData?.id, refreshCabinetData]);
+  
+  // Refresh subscription data
+  const refreshSubscription = useCallback(async () => {
+    if (refreshCabinetData) await refreshCabinetData();
+  }, [refreshCabinetData]);
 
   return (
     <SubscriptionContext.Provider
       value={{
-        status,
+        plan,
+        planConfig,
         limits,
         currentUsage,
-        paymentHistory,
-        checkAccess,
-        canCreateDossier,
-        canUploadDocument,
+        extraDossiers,
         remainingDossiers,
         remainingDocuments,
+        remainingUsers,
         isDossierLimitReached,
         isDocumentLimitReached,
-        upgradeToPremium,
-        setStatus,
+        isUserLimitReached,
+        canCreateDossier,
+        canUploadDocument,
+        canAddUser,
+        canAccessChat,
+        canAccessTasks,
+        canAccessReporting,
+        canAccessAdvancedReporting,
+        canExportWithoutWatermark,
+        paymentHistory,
+        upgradePlan,
+        purchaseExtraDossier,
+        processKPayPayment,
         addDossier,
         addDocument,
+        refreshSubscription,
       }}
     >
       {children}

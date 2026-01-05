@@ -70,7 +70,7 @@ export function UploadDialog() {
     canUploadDocument, 
     currentUsage, 
     limits, 
-    status, 
+    plan, 
     remainingDocuments,
     isDocumentLimitReached,
     addDocument

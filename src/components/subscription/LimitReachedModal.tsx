@@ -7,47 +7,63 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Crown, Lock, Sparkles } from "lucide-react";
+import { Crown, Lock, Sparkles, FolderPlus, FileText, Users } from "lucide-react";
 import { useSubscription } from "@/contexts/SubscriptionContext";
+import { PLANS } from "@/types/subscription";
 
 interface LimitReachedModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  resource: "dossiers" | "documents";
+  resource: "dossiers" | "documents" | "users";
 }
 
 const resourceConfig = {
   dossiers: {
+    icon: FolderPlus,
     singular: "dossier",
     plural: "dossiers",
-    limit: 1,
-    message: "Vous avez atteint la limite de 1 dossier pour le plan FREE.",
-    benefit: "dossiers illimités",
   },
   documents: {
+    icon: FileText,
     singular: "document",
     plural: "documents", 
-    limit: 5,
-    message: "Vous avez atteint la limite de 5 documents pour le plan FREE.",
-    benefit: "documents illimités",
+  },
+  users: {
+    icon: Users,
+    singular: "utilisateur",
+    plural: "utilisateurs",
   },
 };
 
 export function LimitReachedModal({ open, onOpenChange, resource }: LimitReachedModalProps) {
   const navigate = useNavigate();
-  const { status } = useSubscription();
+  const { plan, limits, currentUsage, extraDossiers } = useSubscription();
   const config = resourceConfig[resource];
+  const Icon = config.icon;
+  
+  // Calculate the effective limit for dossiers
+  const effectiveLimit = resource === "dossiers" 
+    ? (limits.maxDossiers === Infinity ? "∞" : limits.maxDossiers + extraDossiers)
+    : (limits.maxDocuments === Infinity ? "∞" : limits.maxDocuments);
+  
+  const usage = resource === "dossiers" 
+    ? currentUsage.dossiers 
+    : resource === "documents" 
+      ? currentUsage.documents 
+      : currentUsage.users;
 
   const handleUpgrade = () => {
     onOpenChange(false);
     navigate("/abonnement");
   };
-
-  // Ne pas afficher pour les utilisateurs PREMIUM
-  if (status === "PREMIUM") return null;
+  
+  // Get next available plan
+  const planOrder = ["FREE", "PREMIUM", "TEAM", "CABINET", "CABINET_XXL"] as const;
+  const currentPlanIndex = planOrder.indexOf(plan);
+  const nextPlan = currentPlanIndex < planOrder.length - 1 ? PLANS[planOrder[currentPlanIndex + 1]] : null;
 
   return (
-    <Dialog open={open} onOpenChange={() => {}}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
         className="sm:max-w-md"
         onPointerDownOutside={(e) => e.preventDefault()}
@@ -61,7 +77,7 @@ export function LimitReachedModal({ open, onOpenChange, resource }: LimitReached
             Limite atteinte
           </DialogTitle>
           <DialogDescription className="text-base font-medium text-foreground">
-            {config.message}
+            Vous avez atteint la limite de {effectiveLimit} {config.plural} pour le plan {plan}.
           </DialogDescription>
         </DialogHeader>
 
@@ -71,46 +87,54 @@ export function LimitReachedModal({ open, onOpenChange, resource }: LimitReached
               <Crown className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <p className="font-semibold text-foreground">Passez à PREMIUM</p>
-              <p className="text-sm text-muted-foreground">Débloquez toutes les fonctionnalités</p>
+              <p className="font-semibold text-foreground">
+                {nextPlan ? `Passez à ${nextPlan.name}` : "Limite maximale"}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {nextPlan ? "Débloquez plus de capacité" : "Vous êtes au plan maximum"}
+              </p>
             </div>
           </div>
           
-          <ul className="space-y-2 text-sm mb-4">
-            <li className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-accent flex-shrink-0" />
-              <span>Dossiers illimités</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-accent flex-shrink-0" />
-              <span>Documents illimités</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-accent flex-shrink-0" />
-              <span>Rappels automatiques (App + WhatsApp)</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-accent flex-shrink-0" />
-              <span>Chat interne & Gestion des tâches</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-accent flex-shrink-0" />
-              <span>Reporting complet</span>
-            </li>
-          </ul>
+          {nextPlan && (
+            <>
+              <ul className="space-y-2 text-sm mb-4">
+                {nextPlan.features.slice(0, 5).map((feature, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-accent flex-shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
 
-          <div className="text-center pt-3 border-t border-accent/20">
-            <p className="text-3xl font-bold font-display text-foreground">
-              35 000 FC<span className="text-base font-normal text-muted-foreground">/mois</span>
-            </p>
-          </div>
+              <div className="text-center pt-3 border-t border-accent/20">
+                <p className="text-3xl font-bold font-display text-foreground">
+                  {nextPlan.price.toLocaleString()} FC
+                  <span className="text-base font-normal text-muted-foreground">/mois</span>
+                </p>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Un seul bouton - pas d'annulation */}
-        <Button variant="gold" size="lg" onClick={handleUpgrade} className="w-full gap-2">
-          <Crown className="w-5 h-5" />
-          Passer à PREMIUM
-        </Button>
+        <div className="flex flex-col gap-2">
+          <Button variant="gold" size="lg" onClick={handleUpgrade} className="w-full gap-2">
+            <Crown className="w-5 h-5" />
+            {nextPlan ? "Voir les plans" : "Gérer l'abonnement"}
+          </Button>
+          
+          {/* Option dossier supplémentaire pour PREMIUM+ */}
+          {resource === "dossiers" && plan !== "FREE" && PLANS[plan].extraDossierPrice && (
+            <Button variant="outline" size="lg" onClick={handleUpgrade} className="w-full gap-2">
+              <FolderPlus className="w-5 h-5" />
+              Acheter un dossier ({PLANS[plan].extraDossierPrice?.toLocaleString()} FC)
+            </Button>
+          )}
+          
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Fermer
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
