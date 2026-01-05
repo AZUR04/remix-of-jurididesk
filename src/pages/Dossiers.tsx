@@ -95,7 +95,7 @@ export default function Dossiers() {
   const [selectedCase, setSelectedCase] = useState<typeof cases[0] | null>(null);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
   
-  const { canCreateDossier, currentUsage, limits, status, isDossierLimitReached } = useSubscription();
+  const { canCreateDossier, currentUsage, limits, plan, isDossierLimitReached } = useSubscription();
 
   const filteredCases = cases.filter((c) => {
     const matchesSearch = c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||

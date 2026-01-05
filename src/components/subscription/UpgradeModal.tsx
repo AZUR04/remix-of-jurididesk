@@ -8,6 +8,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Crown, Lock, Sparkles } from "lucide-react";
+import { useSubscription } from "@/contexts/SubscriptionContext";
+import { PLANS } from "@/types/subscription";
 
 interface UpgradeModalProps {
   open: boolean;
@@ -18,6 +20,12 @@ interface UpgradeModalProps {
 
 export function UpgradeModal({ open, onOpenChange, feature, description }: UpgradeModalProps) {
   const navigate = useNavigate();
+  const { plan } = useSubscription();
+  
+  // Get next available plan that has the feature
+  const planOrder = ["FREE", "PREMIUM", "TEAM", "CABINET", "CABINET_XXL"] as const;
+  const currentPlanIndex = planOrder.indexOf(plan);
+  const nextPlan = currentPlanIndex < planOrder.length - 1 ? PLANS[planOrder[currentPlanIndex + 1]] : null;
 
   const handleUpgrade = () => {
     onOpenChange(false);
@@ -32,52 +40,43 @@ export function UpgradeModal({ open, onOpenChange, feature, description }: Upgra
             <Lock className="w-8 h-8 text-accent" />
           </div>
           <DialogTitle className="font-display text-2xl">
-            Fonctionnalité PREMIUM
+            Fonctionnalité {nextPlan?.name || "PREMIUM"}
           </DialogTitle>
           <DialogDescription className="text-base">
-            {description || `L'accès à "${feature}" nécessite un abonnement PREMIUM.`}
+            {description || `L'accès à "${feature}" nécessite un abonnement supérieur.`}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="bg-muted/50 rounded-xl p-4 my-4">
-          <div className="flex items-center gap-3 mb-3">
-            <Crown className="w-5 h-5 text-accent" />
-            <span className="font-semibold">Passez à PREMIUM</span>
+        {nextPlan && (
+          <div className="bg-muted/50 rounded-xl p-4 my-4">
+            <div className="flex items-center gap-3 mb-3">
+              <Crown className="w-5 h-5 text-accent" />
+              <span className="font-semibold">Passez à {nextPlan.name}</span>
+            </div>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              {nextPlan.features.slice(0, 5).map((feat, i) => (
+                <li key={i} className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-accent" />
+                  {feat}
+                </li>
+              ))}
+            </ul>
           </div>
-          <ul className="space-y-2 text-sm text-muted-foreground">
-            <li className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-accent" />
-              Dossiers illimités
-            </li>
-            <li className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-accent" />
-              Rappels automatiques (App + WhatsApp)
-            </li>
-            <li className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-accent" />
-              Chat interne par dossier
-            </li>
-            <li className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-accent" />
-              Gestion des tâches stagiaires
-            </li>
-            <li className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-accent" />
-              Reporting complet
-            </li>
-          </ul>
-        </div>
+        )}
 
-        <div className="text-center mb-4">
-          <p className="text-3xl font-bold font-display text-foreground">
-            35 000 FC<span className="text-base font-normal text-muted-foreground">/mois</span>
-          </p>
-        </div>
+        {nextPlan && (
+          <div className="text-center mb-4">
+            <p className="text-3xl font-bold font-display text-foreground">
+              {nextPlan.price.toLocaleString()} FC
+              <span className="text-base font-normal text-muted-foreground">/mois</span>
+            </p>
+          </div>
+        )}
 
         <div className="flex flex-col gap-2">
           <Button variant="gold" size="lg" onClick={handleUpgrade} className="gap-2">
             <Crown className="w-5 h-5" />
-            Passer à PREMIUM
+            Voir les plans
           </Button>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Plus tard

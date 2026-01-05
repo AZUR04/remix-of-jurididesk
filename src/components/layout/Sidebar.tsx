@@ -39,7 +39,7 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { 
-    status, 
+    plan, 
     currentUsage, 
     limits, 
     isDossierLimitReached, 
@@ -47,7 +47,7 @@ export function Sidebar() {
   } = useSubscription();
 
   const handleNavClick = (item: typeof navItems[0], e: React.MouseEvent) => {
-    if (item.premium && status === "FREE") {
+    if (item.premium && plan === "FREE") {
       e.preventDefault();
       setBlockedFeature(item.label);
       setUpgradeModalOpen(true);
@@ -79,7 +79,7 @@ export function Sidebar() {
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
-          const isPremiumLocked = item.premium && status === "FREE";
+          const isPremiumLocked = item.premium && plan === "FREE";
           return (
             <NavLink key={item.path} to={item.path} onClick={(e) => handleNavClick(item, e)}>
               <Button
@@ -105,9 +105,9 @@ export function Sidebar() {
       </nav>
 
       {/* Usage Counters for FREE users */}
-      {status === "FREE" && !collapsed && (
+      {plan === "FREE" && !collapsed && (
         <div className="px-3 py-3 border-t border-sidebar-border space-y-2">
-          <p className="text-xs text-sidebar-foreground/60 uppercase tracking-wide px-2">Limites FREE</p>
+          <p className="text-xs text-sidebar-foreground/60 uppercase tracking-wide px-2">Limites {plan}</p>
           <div 
             className={cn(
               "flex items-center justify-between px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors",
@@ -122,7 +122,7 @@ export function Sidebar() {
               Dossiers
             </span>
             <span className="flex items-center gap-1 font-medium">
-              {currentUsage.dossiers}/{limits.maxDossiers}
+              {currentUsage.dossiers}/{limits.maxDossiers === Infinity ? "∞" : limits.maxDossiers}
               {isDossierLimitReached && <Crown className="w-3 h-3 text-accent" />}
             </span>
           </div>
@@ -140,7 +140,7 @@ export function Sidebar() {
               Documents
             </span>
             <span className="flex items-center gap-1 font-medium">
-              {currentUsage.documents}/{limits.maxDocuments}
+              {currentUsage.documents}/{limits.maxDocuments === Infinity ? "∞" : limits.maxDocuments}
               {isDocumentLimitReached && <Crown className="w-3 h-3 text-accent" />}
             </span>
           </div>
@@ -158,7 +158,7 @@ export function Sidebar() {
             >
               <CreditCard className={cn("w-5 h-5 flex-shrink-0", isActive && "text-sidebar-primary")} />
               {!collapsed && <span>Abonnement</span>}
-              {!collapsed && status === "FREE" && (
+              {!collapsed && plan === "FREE" && (
                 <Badge className="ml-auto text-xs bg-accent text-accent-foreground">Upgrade</Badge>
               )}
             </Button>
