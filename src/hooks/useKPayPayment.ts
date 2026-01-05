@@ -3,19 +3,29 @@ import {
   initiatePayment, 
   checkPaymentStatus, 
   validatePhoneNumber,
-  KPayPaymentRequest,
+  generateOrderId,
   KPayPaymentResponse 
 } from "@/lib/kpay";
 
 export type PaymentStatus = "idle" | "initiating" | "pending" | "polling" | "success" | "failed" | "cancelled";
 
+export interface PaymentRequest {
+  amount: number;
+  phoneNumber: string;
+  email?: string;
+  description: string;
+  callbackUrl?: string;
+  returnUrl?: string;
+}
+
 export interface UseKPayPaymentReturn {
   status: PaymentStatus;
   transactionId: string | null;
+  orderId: string | null;
   error: string | null;
   
   // Actions
-  startPayment: (request: Omit<KPayPaymentRequest, "reference">) => Promise<boolean>;
+  startPayment: (request: PaymentRequest) => Promise<boolean>;
   checkStatus: () => Promise<KPayPaymentResponse | null>;
   cancelPayment: () => void;
   reset: () => void;
@@ -27,6 +37,7 @@ export interface UseKPayPaymentReturn {
 export function useKPayPayment(): UseKPayPaymentReturn {
   const [status, setStatus] = useState<PaymentStatus>("idle");
   const [transactionId, setTransactionId] = useState<string | null>(null);
+  const [orderId, setOrderId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
@@ -45,6 +56,7 @@ export function useKPayPayment(): UseKPayPaymentReturn {
   const reset = useCallback(() => {
     setStatus("idle");
     setTransactionId(null);
+    setOrderId(null);
     setError(null);
     attemptRef.current = 0;
     if (pollingRef.current) {
@@ -110,9 +122,7 @@ export function useKPayPayment(): UseKPayPaymentReturn {
     }
   }, [status, transactionId]);
   
-  const startPayment = useCallback(async (
-    request: Omit<KPayPaymentRequest, "reference">
-  ): Promise<boolean> => {
+  const startPayment = useCallback(async (request: PaymentRequest): Promise<boolean> => {
     // Validate phone number first
     const validation = validatePhoneNumber(request.phoneNumber);
     if (!validation.valid) {
@@ -127,13 +137,19 @@ export function useKPayPayment(): UseKPayPaymentReturn {
     setTransactionId(null);
     attemptRef.current = 0;
     
-    // Generate unique reference
-    const reference = `JRD-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+    // Generate unique order ID
+    const newOrderId = generateOrderId();
+    setOrderId(newOrderId);
     
     try {
       const result = await initiatePayment({
-        ...request,
-        reference,
+        amount: request.amount,
+        phoneNumber: request.phoneNumber,
+        email: request.email,
+        description: request.description,
+        orderId: newOrderId,
+        callbackUrl: request.callbackUrl || `${window.location.origin}/api/kpay/webhook`,
+        returnUrl: request.returnUrl || `${window.location.origin}/abonnement?payment=complete`,
       });
       
       if (result.success && result.transactionId) {
@@ -150,6 +166,7 @@ export function useKPayPayment(): UseKPayPaymentReturn {
         return false;
       }
     } catch (err) {
+      console.error("Payment initiation error:", err);
       setStatus("failed");
       setError("Erreur lors de l'initiation du paiement");
       return false;
@@ -163,6 +180,7 @@ export function useKPayPayment(): UseKPayPaymentReturn {
   return {
     status,
     transactionId,
+    orderId,
     error,
     startPayment,
     checkStatus,
