@@ -30,4 +30,22 @@ export const initAnalytics = async () => {
   return null;
 };
 
+// Test Firebase connection
+export const pingFirebase = async (): Promise<boolean> => {
+  try {
+    // Test Auth connection
+    await auth.authStateReady();
+    
+    // Test Firestore connection by attempting a simple operation
+    const { doc, getDoc } = await import("firebase/firestore");
+    await getDoc(doc(db, "_ping", "test"));
+    
+    console.log("✅ Firebase connection successful");
+    return true;
+  } catch (error) {
+    console.error("❌ Firebase connection error:", error);
+    return false;
+  }
+};
+
 export default app;
