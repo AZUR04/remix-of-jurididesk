@@ -1,13 +1,12 @@
-import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode } from "react";
-import { doc, updateDoc, increment, collection, addDoc } from "firebase/firestore";
+import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode, useEffect } from "react";
+import { doc, updateDoc, increment, collection, addDoc, query, where, orderBy, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
   SubscriptionPlan, 
   PlanLimits, 
   PLANS, 
-  PaymentHistoryItem,
-  KPayPaymentRequest 
+  PaymentHistoryItem 
 } from "@/types/subscription";
 
 interface SubscriptionContextType {
@@ -46,11 +45,12 @@ interface SubscriptionContextType {
   
   // Payment history
   paymentHistory: PaymentHistoryItem[];
+  loadingPayments: boolean;
   
   // Actions
   upgradePlan: (newPlan: SubscriptionPlan) => Promise<boolean>;
   purchaseExtraDossier: () => Promise<boolean>;
-  processKPayPayment: (request: KPayPaymentRequest) => Promise<{ success: boolean; error?: string }>;
+  recordPayment: (payment: Omit<PaymentHistoryItem, "id" | "cabinetId">) => Promise<void>;
   
   // Usage updaters
   addDossier: () => void;
@@ -68,6 +68,37 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const refreshCabinetData = auth?.refreshCabinetData;
   
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistoryItem[]>([]);
+  const [loadingPayments, setLoadingPayments] = useState(false);
+  
+  // Fetch payment history from Firestore
+  useEffect(() => {
+    async function fetchPaymentHistory() {
+      if (!cabinetData?.id) return;
+      
+      setLoadingPayments(true);
+      try {
+        const paymentsQuery = query(
+          collection(db, "payments"),
+          where("cabinetId", "==", cabinetData.id),
+          orderBy("date", "desc")
+        );
+        
+        const snapshot = await getDocs(paymentsQuery);
+        const payments = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as PaymentHistoryItem[];
+        
+        setPaymentHistory(payments);
+      } catch (err) {
+        console.error("Error fetching payment history:", err);
+      } finally {
+        setLoadingPayments(false);
+      }
+    }
+    
+    fetchPaymentHistory();
+  }, [cabinetData?.id]);
   
   // Get plan from cabinet data or default to FREE
   const plan: SubscriptionPlan = cabinetData?.plan || "FREE";
@@ -140,40 +171,21 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const canAccessAdvancedReporting = useCallback(() => limits.hasAdvancedReporting, [limits.hasAdvancedReporting]);
   const canExportWithoutWatermark = useCallback(() => !limits.hasWatermark, [limits.hasWatermark]);
   
-  // Process K-Pay payment
-  const processKPayPayment = useCallback(async (request: KPayPaymentRequest): Promise<{ success: boolean; error?: string }> => {
-    // Simulate K-Pay API call
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+  // Record a payment to Firestore
+  const recordPayment = useCallback(async (payment: Omit<PaymentHistoryItem, "id" | "cabinetId">) => {
+    if (!cabinetData?.id) return;
     
-    // Simulate 80% success rate
-    const success = Math.random() > 0.2;
+    const paymentData = {
+      ...payment,
+      cabinetId: cabinetData.id,
+    };
     
-    if (success) {
-      // Add to payment history in Firestore
-      if (cabinetData?.id) {
-        const payment: Omit<PaymentHistoryItem, 'id'> = {
-          cabinetId: cabinetData.id,
-          date: new Date().toISOString(),
-          amount: request.amount,
-          description: request.description,
-          status: "success",
-          reference: request.reference,
-          method: "kpay",
-          phoneNumber: request.phoneNumber,
-        };
-        
-        try {
-          await addDoc(collection(db, "payments"), payment);
-          setPaymentHistory(prev => [{ ...payment, id: Date.now().toString() }, ...prev]);
-        } catch (err) {
-          console.error("Error saving payment:", err);
-        }
-      }
-      
-      return { success: true };
+    try {
+      const docRef = await addDoc(collection(db, "payments"), paymentData);
+      setPaymentHistory(prev => [{ ...paymentData, id: docRef.id }, ...prev]);
+    } catch (err) {
+      console.error("Error saving payment:", err);
     }
-    
-    return { success: false, error: "La transaction a échoué. Veuillez vérifier votre solde." };
   }, [cabinetData?.id]);
   
   // Upgrade plan
@@ -276,9 +288,10 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
         canAccessAdvancedReporting,
         canExportWithoutWatermark,
         paymentHistory,
+        loadingPayments,
         upgradePlan,
         purchaseExtraDossier,
-        processKPayPayment,
+        recordPayment,
         addDossier,
         addDocument,
         refreshSubscription,

@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useSubscription } from "@/contexts/SubscriptionContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { UpgradeModal } from "@/components/subscription/UpgradeModal";
 
 const navItems = [
@@ -38,6 +39,7 @@ export function Sidebar() {
   const [blockedFeature, setBlockedFeature] = useState("");
   const location = useLocation();
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const { 
     plan, 
     currentUsage, 
@@ -53,6 +55,12 @@ export function Sidebar() {
       setUpgradeModalOpen(true);
     }
   };
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/auth");
+  };
+
 
   return (
     <>
@@ -180,6 +188,7 @@ export function Sidebar() {
           variant="sidebar"
           className={cn("w-full text-destructive hover:text-destructive", collapsed ? "justify-center px-0" : "justify-start")}
           title={collapsed ? "Déconnexion" : undefined}
+          onClick={handleLogout}
         >
           <LogOut className="w-5 h-5 flex-shrink-0" />
           {!collapsed && <span>Déconnexion</span>}

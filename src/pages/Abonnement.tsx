@@ -3,36 +3,25 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useSubscription } from "@/contexts/SubscriptionContext";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { PLANS, SubscriptionPlan } from "@/types/subscription";
 import { PlanBadge } from "@/components/subscription/PlanBadge";
+import { KPayPaymentDialog } from "@/components/subscription/KPayPaymentDialog";
 import {
   Crown,
   Check,
-  X,
-  Smartphone,
   CreditCard,
   History,
   CheckCircle2,
   XCircle,
   Clock,
-  Loader2,
   FolderPlus,
   Shield,
-  Sparkles,
   Users,
   Building2,
+  Loader2,
 } from "lucide-react";
 
 const planOrder: SubscriptionPlan[] = ["FREE", "PREMIUM", "TEAM", "CABINET", "CABINET_XXL"];
@@ -48,31 +37,27 @@ export default function Abonnement() {
     plan, 
     planConfig, 
     paymentHistory, 
+    loadingPayments,
     currentUsage, 
     limits,
     extraDossiers,
     upgradePlan, 
     purchaseExtraDossier,
-    processKPayPayment 
+    recordPayment,
   } = useSubscription();
   const { toast } = useToast();
   
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<{ type: "plan" | "dossier"; plan?: SubscriptionPlan } | null>(null);
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [paymentStep, setPaymentStep] = useState<"form" | "processing" | "success" | "error">("form");
 
   const handleSelectPlan = (targetPlan: SubscriptionPlan) => {
     if (targetPlan === plan) return;
     setSelectedProduct({ type: "plan", plan: targetPlan });
-    setPaymentStep("form");
     setPaymentDialogOpen(true);
   };
 
   const handleBuyDossier = () => {
     setSelectedProduct({ type: "dossier" });
-    setPaymentStep("form");
     setPaymentDialogOpen(true);
   };
 
@@ -92,58 +77,35 @@ export default function Abonnement() {
     return `Abonnement ${selectedProduct.plan}`;
   };
 
-  const handlePayment = async () => {
-    if (!phoneNumber || phoneNumber.length < 9) {
-      toast({
-        title: "Numéro invalide",
-        description: "Veuillez entrer un numéro de téléphone valide.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsProcessing(true);
-    setPaymentStep("processing");
-
-    const result = await processKPayPayment({
+  const handlePaymentSuccess = async () => {
+    // Record payment in Firestore
+    await recordPayment({
+      date: new Date().toISOString(),
       amount: getPaymentAmount(),
-      phoneNumber,
       description: getPaymentDescription(),
-      reference: `KPAY-${Date.now()}`,
+      status: "success",
+      reference: `JRD-${Date.now()}`,
+      method: "kpay",
     });
-
-    if (result.success) {
-      setPaymentStep("success");
-      
-      if (selectedProduct?.type === "plan" && selectedProduct.plan) {
-        await upgradePlan(selectedProduct.plan);
-        toast({
-          title: "Paiement réussi !",
-          description: `Votre abonnement ${selectedProduct.plan} est maintenant actif.`,
-        });
-      } else if (selectedProduct?.type === "dossier") {
-        await purchaseExtraDossier();
-        toast({
-          title: "Paiement réussi !",
-          description: "Votre dossier supplémentaire a été ajouté.",
-        });
-      }
-    } else {
-      setPaymentStep("error");
+    
+    // Update plan or extra dossiers
+    if (selectedProduct?.type === "plan" && selectedProduct.plan) {
+      await upgradePlan(selectedProduct.plan);
       toast({
-        title: "Échec du paiement",
-        description: result.error || "La transaction a échoué. Veuillez réessayer.",
-        variant: "destructive",
+        title: "Abonnement activé !",
+        description: `Votre plan ${selectedProduct.plan} est maintenant actif.`,
+      });
+    } else if (selectedProduct?.type === "dossier") {
+      await purchaseExtraDossier();
+      toast({
+        title: "Dossier ajouté !",
+        description: "Votre dossier supplémentaire a été ajouté.",
       });
     }
-
-    setIsProcessing(false);
   };
 
   const closeDialog = () => {
     setPaymentDialogOpen(false);
-    setPhoneNumber("");
-    setPaymentStep("form");
     setSelectedProduct(null);
   };
 
@@ -338,7 +300,12 @@ export default function Abonnement() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {paymentHistory.length === 0 ? (
+          {loadingPayments ? (
+            <div className="text-center py-8">
+              <Loader2 className="w-8 h-8 mx-auto mb-4 animate-spin text-muted-foreground" />
+              <p className="text-muted-foreground">Chargement...</p>
+            </div>
+          ) : paymentHistory.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <CreditCard className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p>Aucun paiement effectué</p>
@@ -390,123 +357,20 @@ export default function Abonnement() {
       </Card>
 
       {/* K-Pay Payment Dialog */}
-      <Dialog open={paymentDialogOpen} onOpenChange={closeDialog}>
-        <DialogContent className="sm:max-w-md">
-          {paymentStep === "form" && (
-            <>
-              <DialogHeader className="text-center">
-                <div className="mx-auto w-16 h-16 rounded-full gradient-gold flex items-center justify-center mb-4">
-                  <Smartphone className="w-8 h-8 text-primary" />
-                </div>
-                <DialogTitle className="font-display text-2xl">
-                  Paiement K-Pay
-                </DialogTitle>
-                <DialogDescription>
-                  {getPaymentDescription()} - {getPaymentAmount().toLocaleString()} FC
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="py-4">
-                <div className="mb-4 p-4 rounded-lg bg-muted/50 text-center">
-                  <div className="w-12 h-12 mx-auto mb-2 bg-primary/10 rounded-full flex items-center justify-center">
-                    <CreditCard className="w-6 h-6 text-primary" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">Paiement sécurisé via K-Pay Mobile Money</p>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="phone">Numéro de téléphone Mobile Money</Label>
-                    <Input
-                      id="phone"
-                      type="tel"
-                      placeholder="Ex: 0812345678"
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      className="mt-2"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Vodacom, Airtel, Orange ou Africell
-                    </p>
-                  </div>
-
-                  <div className="p-4 rounded-lg border bg-card">
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Montant à payer</span>
-                      <span className="text-xl font-bold">
-                        {getPaymentAmount().toLocaleString()} FC
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Button variant="gold" size="lg" onClick={handlePayment} className="gap-2">
-                  <CreditCard className="w-5 h-5" />
-                  Payer maintenant
-                </Button>
-                <Button variant="ghost" onClick={closeDialog}>
-                  Annuler
-                </Button>
-              </div>
-            </>
-          )}
-
-          {paymentStep === "processing" && (
-            <div className="py-12 text-center">
-              <Loader2 className="w-16 h-16 mx-auto text-accent animate-spin mb-4" />
-              <h3 className="text-xl font-display font-semibold mb-2">
-                Traitement en cours...
-              </h3>
-              <p className="text-muted-foreground">
-                Veuillez confirmer le paiement sur votre téléphone
-              </p>
-            </div>
-          )}
-
-          {paymentStep === "success" && (
-            <div className="py-8 text-center">
-              <div className="w-20 h-20 mx-auto rounded-full bg-success/10 flex items-center justify-center mb-4">
-                <CheckCircle2 className="w-10 h-10 text-success" />
-              </div>
-              <h3 className="text-2xl font-display font-bold mb-2">
-                Paiement réussi !
-              </h3>
-              <p className="text-muted-foreground mb-6">
-                {selectedProduct?.type === "plan"
-                  ? `Votre abonnement ${selectedProduct.plan} est maintenant actif.`
-                  : "Votre dossier supplémentaire a été ajouté."}
-              </p>
-              <Button variant="gold" onClick={closeDialog}>
-                Continuer
-              </Button>
-            </div>
-          )}
-
-          {paymentStep === "error" && (
-            <div className="py-8 text-center">
-              <div className="w-20 h-20 mx-auto rounded-full bg-destructive/10 flex items-center justify-center mb-4">
-                <XCircle className="w-10 h-10 text-destructive" />
-              </div>
-              <h3 className="text-2xl font-display font-bold mb-2">
-                Échec du paiement
-              </h3>
-              <p className="text-muted-foreground mb-6">
-                La transaction a échoué. Veuillez vérifier votre solde et réessayer.
-              </p>
-              <div className="flex flex-col gap-2">
-                <Button variant="gold" onClick={() => setPaymentStep("form")}>
-                  Réessayer
-                </Button>
-                <Button variant="ghost" onClick={closeDialog}>
-                  Annuler
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <KPayPaymentDialog
+        open={paymentDialogOpen}
+        onOpenChange={closeDialog}
+        amount={getPaymentAmount()}
+        description={getPaymentDescription()}
+        onSuccess={handlePaymentSuccess}
+        onError={(error) => {
+          toast({
+            title: "Échec du paiement",
+            description: error,
+            variant: "destructive",
+          });
+        }}
+      />
     </AppLayout>
   );
 }
