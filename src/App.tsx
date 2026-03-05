@@ -11,19 +11,19 @@ import Dossiers from "./pages/Dossiers";
 import Calendrier from "./pages/Calendrier";
 import Documents from "./pages/Documents";
 import Messages from "./pages/Messages";
+import MessagesAdmin from "./pages/MessagesAdmin";
 import Taches from "./pages/Taches";
 import Reporting from "./pages/Reporting";
 import Parametres from "./pages/Parametres";
 import Abonnement from "./pages/Abonnement";
+import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 import { Loader2 } from "lucide-react";
 
 const queryClient = new QueryClient();
 
-// Protected route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -31,15 +31,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  
-  if (!user) {
-    return <Navigate to="/auth" replace />;
-  }
-  
+  if (!user) return <Navigate to="/auth" replace />;
   return <>{children}</>;
 }
 
-// App content with routing
 function AppContent() {
   return (
     <BrowserRouter>
@@ -50,10 +45,12 @@ function AppContent() {
         <Route path="/calendrier" element={<ProtectedRoute><Calendrier /></ProtectedRoute>} />
         <Route path="/documents" element={<ProtectedRoute><Documents /></ProtectedRoute>} />
         <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+        <Route path="/messages-admin" element={<ProtectedRoute><MessagesAdmin /></ProtectedRoute>} />
         <Route path="/taches" element={<ProtectedRoute><Taches /></ProtectedRoute>} />
         <Route path="/reporting" element={<ProtectedRoute><Reporting /></ProtectedRoute>} />
         <Route path="/parametres" element={<ProtectedRoute><Parametres /></ProtectedRoute>} />
         <Route path="/abonnement" element={<ProtectedRoute><Abonnement /></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
