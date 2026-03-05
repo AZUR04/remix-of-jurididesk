@@ -248,20 +248,5 @@ export interface PaymentHistoryItem {
   description: string;
   status: "success" | "failed" | "pending";
   reference: string;
-  method: "kpay";
-  phoneNumber?: string;
-}
-
-// K-Pay payment types
-export interface KPayPaymentRequest {
-  amount: number;
-  phoneNumber: string;
-  description: string;
-  reference: string;
-}
-
-export interface KPayPaymentResponse {
-  success: boolean;
-  transactionId?: string;
-  message: string;
+  method: string;
 }
